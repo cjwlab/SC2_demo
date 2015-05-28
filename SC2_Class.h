@@ -42,10 +42,6 @@ public:
   HBITMAP GetBmpHandle(){return m_hBmp;};
 
   DWORD SC2Thread();
-  DWORD SC2Thread2();
-  DWORD SC2Thread3();
-  DWORD SC2Thread4();
-  DWORD SC2Thread5();
 
   unsigned char **m_stack;
 
