@@ -174,8 +174,8 @@ DWORD CSC2Class::SC2Thread()
 		int iRetCode = PCO_SetRecordingState(hCam, 0);// stop recording
 
 // write software time stamps to files
-		std::ofstream allTimesFile ("C:\\AppLogs\\SC2_demo_all_times.txt", std::ofstream::out|std::ofstream::app);
-		std::ofstream TimeOutTimesFile ("C:\\AppLogs\\SC2_demo_timeout_times.txt", std::ofstream::out|std::ofstream::app);
+		std::ofstream allTimesFile ("D:\\SC2_demo_tests\\SC2_demo_all_times.txt", std::ofstream::out|std::ofstream::app);
+		std::ofstream TimeOutTimesFile ("D:\\SC2_demo_tests\\SC2_demo_timeout_times.txt", std::ofstream::out|std::ofstream::app);
 
 		CString info;
 
@@ -213,7 +213,7 @@ DWORD CSC2Class::SC2Thread()
 		DWORD numberOfBytesWritten;
 
 		char currentStack[10];
-		char saveFile[400] = "D:\\file_out";
+		char saveFile[400] = "D:\\SC2_demo_tests\\file_out";
 		_itoa(time_index, currentStack,10);
 		strncat_s(saveFile, currentStack, sizeof(currentStack));		
 		tranImage.Open(saveFile, CFile::modeCreate|CFile::modeWrite|CFile::shareDenyNone);
