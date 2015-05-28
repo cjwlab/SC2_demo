@@ -47,7 +47,6 @@ public:
 
   bool m_bThreadRun;
   bool m_bPlay;
-  bool m_bFirstArm;
 
   HANDLE m_hMutex; 
   

@@ -43,9 +43,6 @@ CSC2Class::CSC2Class()
   
   m_wXResAct = 0;                      // initialize resolution to 0 * 0
   m_wYResAct = 0;
-
-  m_bFirstArm = FALSE;
-
   
   strGeneral.wSize = sizeof(strGeneral);// initialize all structure size members
   strGeneral.strCamType.wSize = sizeof(strGeneral.strCamType);
@@ -81,10 +78,12 @@ CSC2Class::~CSC2Class()
 
 DWORD CSC2Class::SC2Thread()
 {
-
 	#define NUMBER_OF_FRAMES 1999
 	#define NUMBER_OF_TIME_POINTS 10
 
+	int timeOutLogTime=19; // [ms]
+
+// allocate image memory
 	m_stack = new unsigned char * [NUMBER_OF_FRAMES];	
 	for(int i = 0; i < NUMBER_OF_FRAMES; ++i)
 	{
@@ -95,8 +94,6 @@ DWORD CSC2Class::SC2Thread()
 	int ierr = 0;
 	int ierrorcnt = 0;
 	WORD wimage = 0;
-
-	int timeOutLogTime=19; // [ms]
   
 	int loggingArray[NUMBER_OF_FRAMES][5]; // [time point][h;min;s;ms]
 	int frameNumber=1;
@@ -112,15 +109,31 @@ DWORD CSC2Class::SC2Thread()
 		wimage = 1;
 	}
 
-	for (int i=0;i<NUMBER_OF_BUFFERS;i++){
-		ResetEvent(ghEvents[i]);
-		ierr = PCO_AddBufferEx(hCam, wimage, wimage, (SHORT)i, m_wXResAct, m_wYResAct, 16);
-	}
+// image time points
+	for (int time_index=0;m_bThreadRun & (time_index<NUMBER_OF_TIME_POINTS);time_index++)
+	{		
+// prepare camera to acquire (use multiple buffers)
+		ierr = PCO_ArmCamera(hCam);     // Prepare Camera for recording		
+		if (ierr != PCO_NOERROR)
+		{
+			Disconnected();
+			return -1;
+		}
+		ierr = PCO_SetRecordingState(hCam, 1);// Start recording
+		if (ierr != PCO_NOERROR)
+		{
+			Disconnected();
+			return -1;
+		}
 
-	for (int time_index=0;time_index<NUMBER_OF_TIME_POINTS;time_index++)
-	{
+		for (int i=0;i<NUMBER_OF_BUFFERS;i++){
+			ResetEvent(ghEvents[i]);
+			ierr = PCO_AddBufferEx(hCam, wimage, wimage, (SHORT)i, m_wXResAct, m_wYResAct, 16);
+		}
+
+// acquire frames of a time point
 		int frameNumber=1;
-		while (m_bThreadRun & frameNumber<=NUMBER_OF_FRAMES)
+		while (m_bThreadRun & (frameNumber<=NUMBER_OF_FRAMES))
 		{
 			DWORD dwStatusDll, dwStatusDrv;
 
@@ -131,23 +144,16 @@ DWORD CSC2Class::SC2Thread()
 
 				ierr = PCO_GetBufferStatus(hCam, buffer_number, &dwStatusDll, &dwStatusDrv);
 				if (ierr != PCO_NOERROR)
-				{
-				  ::PostMessage(m_hwndMain, WM_APP+101, 0, ierr);
-				  //break;
-				}
+				  ::PostMessage(m_hwndMain, WM_APP+101, 0, ierr);				
 				if(dwStatusDrv != 0)
 				  ierr = PCO_ERROR_TIMEOUT | PCO_ERROR_APPLICATION;
 				else
 				  ierr = 0;
 
 				if (ierr != PCO_NOERROR)
-				{
-				  ::PostMessage(m_hwndMain, WM_APP+101, 0, ierr);
-		  //        break;
-				}
+					::PostMessage(m_hwndMain, WM_APP+101, 0, ierr);
 
 				memcpy(m_stack[frameNumber-1], m_camImage[buffer_number], 2*m_wXResAct*m_wYResAct);
-
 
 				ierr = PCO_AddBufferEx(hCam, wimage, wimage, buffer_number, m_wXResAct, m_wYResAct, 16);
 				ResetEvent(ghEvents[buffer_number]);
@@ -159,44 +165,31 @@ DWORD CSC2Class::SC2Thread()
 				loggingArray[frameNumber-1][3] = (int)systime.wMilliseconds;
 				loggingArray[frameNumber-1][4] = buffer_number;
 
-		//        break;
-
 				frameNumber++;
-
 			}
-/*
-			else{
-				ierrorcnt++;
-				if(ierrorcnt >= 5)
-					m_bThreadRun = FALSE;
-				ierr = PCO_ERROR_TIMEOUT | PCO_ERROR_APPLICATION;
-				//break;
-			}
-			*/
+		} // acquisition while loop end
 
-	//    ResetEvent(m_hEvent);              // Prepare event for next image.
-	//    Convert();                         // Convert image got.
+// remove buffers the driver queue
+		PCO_RemoveBuffer(hCam);
+		int iRetCode = PCO_SetRecordingState(hCam, 0);// stop recording
 
-
-
-		}
-
+// write software time stamps to files
 		std::ofstream allTimesFile ("C:\\AppLogs\\SC2_demo_all_times.txt", std::ofstream::out|std::ofstream::app);
 		std::ofstream TimeOutTimesFile ("C:\\AppLogs\\SC2_demo_timeout_times.txt", std::ofstream::out|std::ofstream::app);
 
 		CString info;
-		char infoChar[50];
 
 		allTimesFile<<"Time point: "<<time_index+1<<"\n";
-
+		TimeOutTimesFile<<"Time point: "<<time_index+1<<"\n";
 		for(int f_ind=0;f_ind<NUMBER_OF_FRAMES;f_ind++){
+// write all times
 			allTimesFile<<f_ind+1<<"\t";
 			for (int i=0;i<5;i++){
 				allTimesFile<<loggingArray[f_ind][i]<<"\t";
 			}	  
 			allTimesFile<<"\n";
-
-			if (f_ind>0 & ((loggingArray[f_ind][0]*60*60*1000+loggingArray[f_ind][1]*60*1000+loggingArray[f_ind][2]*1000+loggingArray[f_ind][3])-(loggingArray[f_ind-1][0]*60*60*1000+loggingArray[f_ind-1][1]*60*1000+loggingArray[f_ind-1][2]*1000+loggingArray[f_ind-1][3]))>timeOutLogTime) {
+// write 'time outs'
+			if ((f_ind>0) & (((loggingArray[f_ind][0]*60*60*1000+loggingArray[f_ind][1]*60*1000+loggingArray[f_ind][2]*1000+loggingArray[f_ind][3])-(loggingArray[f_ind-1][0]*60*60*1000+loggingArray[f_ind-1][1]*60*1000+loggingArray[f_ind-1][2]*1000+loggingArray[f_ind-1][3]))>timeOutLogTime)) {
 				TimeOutTimesFile<<f_ind<<"\t";
 				for (int i=0;i<5;i++){
 					TimeOutTimesFile<<loggingArray[f_ind-1][i]<<"\t";
@@ -214,34 +207,33 @@ DWORD CSC2Class::SC2Thread()
 		allTimesFile.close();
 		TimeOutTimesFile.close();
 		
+
+// write raw image data
 		CFile tranImage;
 		DWORD numberOfBytesWritten;
-
 
 		char currentStack[10];
 		char saveFile[400] = "D:\\file_out";
 		_itoa(time_index, currentStack,10);
 		strncat_s(saveFile, currentStack, sizeof(currentStack));		
 		tranImage.Open(saveFile, CFile::modeCreate|CFile::modeWrite|CFile::shareDenyNone);
+
 		for(int i = 0; i < NUMBER_OF_FRAMES; ++i)			
 			WriteFile(tranImage, m_stack[i], m_wXResAct*m_wYResAct*2, &numberOfBytesWritten, NULL);
 		tranImage.Close();
 
-
-/*		std::ofstream outputImageFile ("D:\\file_out.raw", std::ofstream::app);
+// reset the image to zeros
 		for(int i = 0; i < NUMBER_OF_FRAMES; ++i)			
-			outputImageFile.write ((char *)m_stack[i],m_wXResAct*m_wYResAct*2);
-		outputImageFile.close();
-		*/
+			memset(m_stack[i],0,m_wXResAct*m_wYResAct*2);
 
-	}
+	} // time point loop end
 	m_bThreadRun = false;
 	::PostMessage(m_hwndMain, WM_APP+101, 0, ierr);// Tell app: We are down.
 
+// deallocate image memory
 	for(int i = 0; i < NUMBER_OF_FRAMES; ++i)
 		delete [] m_stack [i];
 	delete [] m_stack;
-
 
 	return 0;
 }
@@ -784,21 +776,6 @@ int CSC2Class::StartRecord()
   if((iRetCode & (PCO_ERROR_IS_ERROR | PCO_ERROR_LAYER_MASK | PCO_ERROR_CODE_MASK)) == PCO_ERROR_FIRMWARE_NOT_SUPPORTED)
     iRetCode = PCO_NOERROR;
 
-  if (iRetCode != PCO_NOERROR)
-  {
-    Disconnected();
-    return -1;
-  }
-  if(m_bFirstArm == FALSE)
-    iRetCode = PCO_ArmCamera(hCam);     // Prepare Camera for recording
-  m_bFirstArm = TRUE;
-
-  if (iRetCode != PCO_NOERROR)
-  {
-    Disconnected();
-    return -1;
-  }
-  iRetCode = PCO_SetRecordingState(hCam, 1);// Start recording
   if (iRetCode != PCO_NOERROR)
   {
     Disconnected();
