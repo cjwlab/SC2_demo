@@ -165,7 +165,7 @@
       <AdditionalIncludeDirectories>$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Link>
-      <AdditionalDependencies>SC2_Cam.lib;SC2_Dlg.lib;Pco_conv.lib;Pco_CDlg.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>pco_edge_rs_calc.lib;SC2_Cam.lib;SC2_Dlg.lib;Pco_conv.lib;Pco_CDlg.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)\SC2_Demo.exe</OutputFile>
       <AdditionalLibraryDirectories>lib64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <GenerateDebugInformation>true</GenerateDebugInformation>

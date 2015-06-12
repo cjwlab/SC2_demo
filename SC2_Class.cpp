@@ -87,9 +87,13 @@ DWORD CSC2Class::SC2Thread()
 	m_stack = new unsigned char * [NUMBER_OF_FRAMES];	
 	for(int i = 0; i < NUMBER_OF_FRAMES; ++i)
 	{
-		m_stack [i] = new unsigned char[m_wXResAct*m_wYResAct*2];
-		memset(m_stack[i],0,m_wXResAct*m_wYResAct*2);
+		m_stack [i] = new unsigned char[rawsize];
+		memset(m_stack[i],0,rawsize);
 	}
+
+	unsigned char *single_m_stack_temp = new unsigned char[m_wXResAct*m_wYResAct*2];
+	memset(single_m_stack_temp,0,m_wXResAct*m_wYResAct*2);
+
 
 	int ierr = 0;
 	int ierrorcnt = 0;
@@ -153,7 +157,7 @@ DWORD CSC2Class::SC2Thread()
 				if (ierr != PCO_NOERROR)
 					::PostMessage(m_hwndMain, WM_APP+101, 0, ierr);
 
-				memcpy(m_stack[frameNumber-1], m_camImage[buffer_number], 2*m_wXResAct*m_wYResAct);
+				memcpy(m_stack[frameNumber-1], m_camImage[buffer_number], rawsize);
 
 				ierr = PCO_AddBufferEx(hCam, wimage, wimage, buffer_number, m_wXResAct, m_wYResAct, 16);
 				ResetEvent(ghEvents[buffer_number]);
@@ -218,13 +222,14 @@ DWORD CSC2Class::SC2Thread()
 		strncat_s(saveFile, currentStack, sizeof(currentStack));		
 		tranImage.Open(saveFile, CFile::modeCreate|CFile::modeWrite|CFile::shareDenyNone);
 
-		for(int i = 0; i < NUMBER_OF_FRAMES; ++i)			
-			WriteFile(tranImage, m_stack[i], m_wXResAct*m_wYResAct*2, &numberOfBytesWritten, NULL);
+		for(int i = 0; i < NUMBER_OF_FRAMES; ++i)					 
+			PCO_RS_Calculate(hconvert,m_wXResAct,m_wYResAct,(unsigned short*)m_stack[i],(unsigned short*)single_m_stack_temp);
+			WriteFile(tranImage,single_m_stack_temp, m_wXResAct*m_wYResAct*2, &numberOfBytesWritten, NULL);
 		tranImage.Close();
 
 // reset the image to zeros
 		for(int i = 0; i < NUMBER_OF_FRAMES; ++i)			
-			memset(m_stack[i],0,m_wXResAct*m_wYResAct*2);
+			memset(m_stack[i],0,rawsize);
 
 	} // time point loop end
 	m_bThreadRun = false;
@@ -614,12 +619,15 @@ void CSC2Class::PrepareBuffers()
 
   // multiple buffers
 
+// 12bit raw image  
+  rawsize=(m_wXResAct * m_wYResAct * 12)/16;  
+
   int iRetCode;
 
   for(int i=0;i<NUMBER_OF_BUFFERS;i++){
 	ghEvents[i]=NULL;
 	m_wBufferNr2[i]=-1;
-	iRetCode = PCO_AllocateBuffer(hCam, (SHORT*)&m_wBufferNr2[i], m_wXResAct * m_wYResAct * 2, &m_camImage[i], &ghEvents[i]);
+	iRetCode = PCO_AllocateBuffer(hCam, (SHORT*)&m_wBufferNr2[i], rawsize, &m_camImage[i], &ghEvents[i]);
   }
 
 /*	for(int i=0; i<=1; i++) // Frees the memory that was allocated for the buffer
@@ -771,6 +779,31 @@ int CSC2Class::StartRecord()
     return -1;
   }
   m_bPlay = FALSE;
+
+  WORD wId = 0, wh = 0; 
+  int err;
+
+  err = PCO_GetTransferParameter(hCam, &strCLTransferParameter, sizeof(strCLTransferParameter));
+
+  strCLTransferParameter.DataFormat = PCO_CL_DATAFORMAT_5x12R | SCCMOS_FORMAT_TOP_CENTER_BOTTOM_CENTER;
+  wId = 0x1612;// Switch LUT->sqrt
+
+  err = PCO_SetTransferParameter(hCam, &strCLTransferParameter, sizeof(strCLTransferParameter)); 
+  if(err != PCO_NOERROR) { 
+	//PCO_Error(err, "Error in HandleEdgePixelRate/SETTRANSFERPARAMETER!\r\n",FALSE);
+  }
+	
+  err = PCO_SetActiveLookupTable(hCam, &wId, &wh);
+  if(err != PCO_NOERROR){
+  	//PCO_Error(err, "Error in HandleEdgePixelRate/SETACTIVELOOKUPTABLE!\r\n",FALSE);
+  }	
+
+// convert
+  hconvert=NULL;
+  err=PCO_RS_ConvertCreate(&hconvert);
+  err=PCO_RS_Build_Random(hconvert,(unsigned int)time(NULL),77777);
+
+
   PrepareBuffers();                   // Prepare receiving buffers and memory bitmap
   iRetCode = PCO_ClearRamSegment(hCam);// Clear all previous recorded pictures in actual segment
   if((iRetCode & (PCO_ERROR_IS_ERROR | PCO_ERROR_LAYER_MASK | PCO_ERROR_CODE_MASK)) == PCO_ERROR_FIRMWARE_NOT_SUPPORTED)

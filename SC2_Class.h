@@ -11,6 +11,7 @@
 #include "include\pco_convdlgexport.h"
 #include "include\PCO_Err.h"
 #include "include\Sc2_DialogExport.h"
+#include "include\pco_edge_rs_calc_Export.h"
 
 class CSC2Class
 {
@@ -38,6 +39,8 @@ public:
   void AutoGain();
   void WhiteBalance();
   int  Convert();
+
+  int rawsize;
 
   HBITMAP GetBmpHandle(){return m_hBmp;};
 
@@ -67,6 +70,8 @@ private:
   PCO_Storage strStorage;
   PCO_Recording strRecording;
   PCO_Image strImage;
+  PCO_SC2_CL_TRANSFER_PARAM strCLTransferParameter;
+  HANDLE hconvert;
 
   CWinThread*  m_wthWorker;
   HANDLE m_hEvent;
